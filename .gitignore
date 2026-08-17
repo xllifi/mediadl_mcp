@@ -1,4 +1,5 @@
 /target
 config.json
 tokens.json
+compose.yml
 *.tmp
