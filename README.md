@@ -4,7 +4,8 @@ An [MCP](https://modelcontextprotocol.io) server that lets an LLM search torrent
 indexers for movies / TV shows / anime and download them through **qBittorrent**,
 behind a two-step confirmation flow.
 
-Transports over **stdio** (the standard way MCP servers are launched by clients).
+Serves MCP over **streamable HTTP** at `/mcp`, protected by a static bearer
+token (header or query-param).
 
 # ⚠️ WARNING: FULLY VIBECODED SLOP ⚠️
 Ye be warned.
@@ -46,6 +47,10 @@ config, only credentials and per-indexer options.
   "qbittorrent_url": "http://127.0.0.1:8080",
   "qbittorrent_username": "admin",        // optional if qBittorrent auth is bypassed
   "qbittorrent_password": "adminadmin",
+  "http": {
+    "listen": "0.0.0.0:8000",            // bind address for the MCP endpoint
+    "token": "CHANGE_ME_LONG_RANDOM_SECRET" // bearer token (required)
+  },
   "indexers": {
     "nyaa":    { "type": "nyaa" },
     "kinozal": {
@@ -56,6 +61,14 @@ config, only credentials and per-indexer options.
   }
 }
 ```
+
+The MCP endpoint is `http://<listen>/mcp` and requires a static auth token
+(`http.token`), supplied either as `Authorization: Bearer <token>` **or** as an
+`?api_key=<token>` query parameter (the query-param form exists because
+ChatGPT's connector UI can't set request headers). The token is compared in
+constant time. The server **refuses to start without a token** unless you set
+`http.allow_insecure_no_auth: true` (not recommended — the endpoint can trigger
+downloads). `/health` is unauthenticated so orchestrators can probe it.
 
 ### Indexers
 
@@ -71,7 +84,46 @@ Both accept an optional `base_url` override to point at a mirror.
 ```sh
 cargo build --release
 ./target/release/mediadl-mcp --config config.json --tokens tokens.json
+# listens on http://<http.listen>/mcp (default 0.0.0.0:8000)
 ```
+
+### Wire it into an MCP client
+
+Point your client at the HTTP endpoint with the bearer token:
+
+```json
+{
+  "mcpServers": {
+    "mediadl": {
+      "type": "http",
+      "url": "http://127.0.0.1:8000/mcp",
+      "headers": {
+        "Authorization": "Bearer CHANGE_ME_LONG_RANDOM_SECRET"
+      }
+    }
+  }
+}
+```
+
+### Use it from ChatGPT (Plus, developer mode)
+
+ChatGPT's connector UI **cannot set request headers**, so authenticate via the
+query-param token instead. You need a **public HTTPS URL** (ChatGPT will not
+talk to plain `http://` or localhost) — put the server behind a TLS reverse
+proxy or a tunnel (Cloudflare Tunnel / ngrok).
+
+1. Run the server reachable at e.g. `https://mcp.example.com/mcp`.
+2. In ChatGPT: **Settings → Apps → Advanced Options → enable Developer Mode**.
+3. **Create app / connector** with:
+   * **URL:** `https://mcp.example.com/mcp?api_key=CHANGE_ME_LONG_RANDOM_SECRET`
+   * **Authentication:** `None` (the token is already in the URL)
+4. Enable the connector in a chat and ask it to search, e.g. "search nyaa for
+   Frieren".
+
+ChatGPT fetches the tool list on creation, so the URL must be live and the token
+valid at that point. Note: developer mode disables ChatGPT's memory feature, and
+exposing a download-triggering endpoint to the internet means you should use a
+long random token and real TLS.
 
 ### Docker
 
@@ -80,24 +132,15 @@ docker build -t mediadl-mcp .
 # or: docker compose build
 ```
 
-The image runs as a non-root user and stores confirmation tokens in the `/data`
-volume. It's a stdio server, so it's normally spawned by an MCP client; point
-the client at the container:
+The image runs as a non-root user, stores confirmation tokens in the `/data`
+volume, and exposes port `8000`. Run it (or use `compose.yml`):
 
-```json
-{
-  "mcpServers": {
-    "mediadl": {
-      "command": "docker",
-      "args": [
-        "run", "--rm", "-i",
-        "-v", "/path/to/config.json:/data/config.json:ro",
-        "-v", "mediadl-data:/data",
-        "mediadl-mcp:latest"
-      ]
-    }
-  }
-}
+```sh
+docker run -d --name mediadl-mcp \
+  -p 8000:8000 \
+  -v /path/to/config.json:/data/config.json:ro \
+  -v mediadl-data:/data \
+  mediadl-mcp:latest
 ```
 
 `compose.yml` also ships an optional qBittorrent service:
@@ -107,19 +150,7 @@ docker compose --profile qbittorrent up   # brings up qBittorrent too
 ```
 
 Set `"qbittorrent_url": "http://qbittorrent:8080"` in `config.json` to use it.
-
-### Wire it into an MCP client (example: Claude Desktop / claude_desktop_config.json)
-
-```json
-{
-  "mcpServers": {
-    "mediadl": {
-      "command": "/path/to/mediadl-mcp",
-      "args": ["--config", "/path/to/config.json", "--tokens", "/path/to/tokens.json"]
-    }
-  }
-}
-```
+Then point your MCP client at `http://127.0.0.1:8000/mcp` with the bearer token.
 
 ## Development
 
@@ -136,9 +167,10 @@ error is surfaced to the LLM rather than crashing the server.
 
 ```
 src/
-  main.rs              binary entrypoint (args, logging, stdio transport)
+  main.rs              binary entrypoint (args, logging, HTTP transport)
   lib.rs               library root
-  config.rs            JSON config (qBittorrent + per-indexer)
+  auth.rs              HTTP token-auth middleware (constant-time)
+  config.rs            JSON config (qBittorrent + HTTP/auth + per-indexer)
   qbittorrent.rs       qBittorrent WebUI API v2 client (login, version, add)
   tokens.rs            disk-persisted, single-use, 24h confirmation tokens
   server.rs            the 5 MCP tools

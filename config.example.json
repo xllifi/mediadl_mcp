@@ -2,6 +2,10 @@
   "qbittorrent_url": "http://127.0.0.1:8080",
   "qbittorrent_username": "admin",
   "qbittorrent_password": "adminadmin",
+  "http": {
+    "listen": "0.0.0.0:8000",
+    "token": "CHANGE_ME_LONG_RANDOM_SECRET"
+  },
   "indexers": {
     "nyaa": {
       "type": "nyaa"

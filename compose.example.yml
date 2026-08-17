@@ -3,12 +3,11 @@ services:
     build: .
     image: mediadl-mcp:latest
     container_name: mediadl-mcp
-    # stdio MCP server: it reads requests from stdin and writes to stdout, so it
-    # is normally spawned directly by an MCP client. These flags let `docker
-    # compose run` / `docker exec` drive it interactively.
-    stdin_open: true
-    tty: false
+    # MCP over HTTP (streamable). Set http.listen (default 0.0.0.0:8000) and
+    # http.token (bearer / ?api_key= auth) in config.json.
     restart: unless-stopped
+    ports:
+      - "8000:8000"
     volumes:
       # Your config (contains qBittorrent + indexer credentials).
       - ./config.json:/data/config.json:ro

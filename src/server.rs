@@ -1,7 +1,6 @@
 //! The MCP tool surface: status, search, listing_info, prepare_download, confirm_download.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ContentBlock};
@@ -21,10 +20,9 @@ pub struct MediaDlServer {
 }
 
 impl MediaDlServer {
-    pub async fn new(config_path: &PathBuf, tokens_path: PathBuf) -> anyhow::Result<Self> {
-        let config = Config::load(config_path)?;
-        let indexers = indexer::build_indexers(&config)?;
-        let qbittorrent = QBittorrentClient::new(&config);
+    pub async fn new(config: &Config, tokens_path: std::path::PathBuf) -> anyhow::Result<Self> {
+        let indexers = indexer::build_indexers(config)?;
+        let qbittorrent = QBittorrentClient::new(config);
         let tokens = TokenStore::load(tokens_path).await?;
         Ok(Self {
             indexers: std::sync::Arc::new(indexers),

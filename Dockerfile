@@ -36,6 +36,8 @@ RUN chmod 0755 /usr/local/bin/mediadl-mcp
 USER mediadl
 WORKDIR /data
 
-# stdio MCP server: no ports are exposed.
+# MCP over HTTP (streamable). Default listen is 0.0.0.0:8000 (config http.listen).
+EXPOSE 8000
+
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/mediadl-mcp"]
 CMD ["--config", "/data/config.json", "--tokens", "/data/tokens.json"]
