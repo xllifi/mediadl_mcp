@@ -1,0 +1,11 @@
+/target
+.git
+.gitignore
+*.md
+config.json
+tokens.json
+*.tmp
+Dockerfile
+compose.yml
+docker-compose.yml
+.dockerignore

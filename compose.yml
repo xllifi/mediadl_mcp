@@ -1,0 +1,44 @@
+services:
+  mediadl-mcp:
+    build: .
+    image: mediadl-mcp:latest
+    container_name: mediadl-mcp
+    # stdio MCP server: it reads requests from stdin and writes to stdout, so it
+    # is normally spawned directly by an MCP client. These flags let `docker
+    # compose run` / `docker exec` drive it interactively.
+    stdin_open: true
+    tty: false
+    restart: unless-stopped
+    volumes:
+      # Your config (contains qBittorrent + indexer credentials).
+      - ./config.json:/data/config.json:ro
+      # Persistent confirmation tokens (survive restarts/reboots).
+      - mediadl-data:/data
+    environment:
+      RUST_LOG: info
+
+  # Optional: a qBittorrent instance to download into. Enable with:
+  #   docker compose --profile qbittorrent up
+  # Then set "qbittorrent_url": "http://qbittorrent:8080" in config.json.
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    profiles: ["qbittorrent"]
+    restart: unless-stopped
+    ports:
+      - "8080:8080"   # WebUI
+      - "6881:6881"   # BT (tcp)
+      - "6881:6881/udp"
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: Etc/UTC
+      WEBUI_PORT: "8080"
+    volumes:
+      - qbittorrent-config:/config
+      - qbittorrent-downloads:/downloads
+
+volumes:
+  mediadl-data:
+  qbittorrent-config:
+  qbittorrent-downloads:
