@@ -6,8 +6,10 @@ services:
     # MCP over HTTP (streamable). Set http.listen (default 0.0.0.0:8000) and
     # http.token (bearer / ?api_key= auth) in config.json.
     restart: unless-stopped
-    ports:
-      - "8000:8000"
+    # No host port published: Caddy reaches this over the internal network.
+    # (Publish 8000:8000 yourself if you want direct LAN access without TLS.)
+    expose:
+      - "8000"
     volumes:
       # Your config (contains qBittorrent + indexer credentials).
       - ./config.json:/data/config.json:ro
@@ -15,6 +17,26 @@ services:
       - mediadl-data:/data
     environment:
       RUST_LOG: info
+
+  # TLS-terminating reverse proxy with automatic HTTPS (Let's Encrypt).
+  # Set MCP_DOMAIN to your public hostname and make sure ports 80/443 are open
+  # and DNS points at this host. Caddy handles cert issuance + renewal.
+  caddy:
+    image: caddy:2
+    container_name: mediadl-caddy
+    restart: unless-stopped
+    depends_on:
+      - mediadl-mcp
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    environment:
+      MCP_DOMAIN: ${MCP_DOMAIN:-mediadl.example.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
 
   # Optional: a qBittorrent instance to download into. Enable with:
   #   docker compose --profile qbittorrent up
@@ -39,5 +61,7 @@ services:
 
 volumes:
   mediadl-data:
+  caddy-data:
+  caddy-config:
   qbittorrent-config:
   qbittorrent-downloads:

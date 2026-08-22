@@ -49,7 +49,8 @@ config, only credentials and per-indexer options.
   "qbittorrent_password": "adminadmin",
   "http": {
     "listen": "0.0.0.0:8000",            // bind address for the MCP endpoint
-    "token": "CHANGE_ME_LONG_RANDOM_SECRET" // bearer token (required)
+    "token": "CHANGE_ME_LONG_RANDOM_SECRET", // bearer token (required)
+    "allowed_hosts": ["mediadl.example.com"]  // public Host header (see below)
   },
   "indexers": {
     "nyaa":    { "type": "nyaa" },
@@ -69,6 +70,12 @@ ChatGPT's connector UI can't set request headers). The token is compared in
 constant time. The server **refuses to start without a token** unless you set
 `http.allow_insecure_no_auth: true` (not recommended — the endpoint can trigger
 downloads). `/health` is unauthenticated so orchestrators can probe it.
+
+`http.allowed_hosts` guards the `Host` header against DNS-rebinding attacks. It
+defaults to loopback only, so when you serve behind a reverse proxy on a public
+hostname you **must** add that hostname here (otherwise requests are rejected
+with `403` and a `rejected request with disallowed Host header` warning). A bare
+hostname matches any port. Use `["*"]` to disable the check entirely.
 
 ### Indexers
 
@@ -105,25 +112,33 @@ Point your client at the HTTP endpoint with the bearer token:
 }
 ```
 
-### Use it from ChatGPT (Plus, developer mode)
+### Public HTTPS with Caddy (for ChatGPT)
 
-ChatGPT's connector UI **cannot set request headers**, so authenticate via the
-query-param token instead. You need a **public HTTPS URL** (ChatGPT will not
-talk to plain `http://` or localhost) — put the server behind a TLS reverse
-proxy or a tunnel (Cloudflare Tunnel / ngrok).
+ChatGPT needs a **public HTTPS URL** and can't send auth headers, so the setup
+is: Caddy terminates TLS in front of the server, and the token travels in the
+`?api_key=` query param. `compose.yml` ships a ready Caddy service and a
+`Caddyfile` (automatic Let's Encrypt certs).
 
-1. Run the server reachable at e.g. `https://mcp.example.com/mcp`.
-2. In ChatGPT: **Settings → Apps → Advanced Options → enable Developer Mode**.
-3. **Create app / connector** with:
-   * **URL:** `https://mcp.example.com/mcp?api_key=CHANGE_ME_LONG_RANDOM_SECRET`
+1. Point a public DNS record (e.g. `mediadl.example.com`) at your host and open
+   ports `80` + `443`.
+2. In `config.json`, set `http.allowed_hosts` to that hostname
+   (`["mediadl.example.com"]`) — this is required or rmcp rejects the public
+   `Host` header.
+3. Bring it up:
+   ```sh
+   MCP_DOMAIN=mediadl.example.com docker compose up -d
+   ```
+   Caddy gets the certificate and proxies `https://<domain>/mcp` to the app. The
+   app's own port is not exposed to the host — only Caddy's 80/443 are.
+4. In ChatGPT: **Settings → Apps → Advanced Options → enable Developer Mode**,
+   then create a connector:
+   * **URL:** `https://mediadl.example.com/mcp?api_key=CHANGE_ME_LONG_RANDOM_SECRET`
    * **Authentication:** `None` (the token is already in the URL)
-4. Enable the connector in a chat and ask it to search, e.g. "search nyaa for
-   Frieren".
+5. Enable the connector in a chat and ask e.g. "search nyaa for Frieren".
 
-ChatGPT fetches the tool list on creation, so the URL must be live and the token
-valid at that point. Note: developer mode disables ChatGPT's memory feature, and
-exposing a download-triggering endpoint to the internet means you should use a
-long random token and real TLS.
+ChatGPT fetches the tool list when you create the connector, so the URL must be
+live and the token valid at that point. Note: developer mode disables ChatGPT's
+memory feature; use a long random token since the endpoint can trigger downloads.
 
 ### Docker
 
@@ -143,7 +158,8 @@ docker run -d --name mediadl-mcp \
   mediadl-mcp:latest
 ```
 
-`compose.yml` also ships an optional qBittorrent service:
+`compose.yml` runs Caddy + the app by default. It also ships an optional
+qBittorrent service:
 
 ```sh
 docker compose --profile qbittorrent up   # brings up qBittorrent too

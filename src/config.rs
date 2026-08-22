@@ -34,6 +34,12 @@ pub struct HttpConfig {
     /// `?api_key=<token>`. Required unless `allow_insecure_no_auth` is set.
     #[serde(default)]
     pub token: Option<String>,
+    /// Allowed `Host` header values (DNS-rebinding protection). Defaults to
+    /// loopback only; add your public hostname (e.g. "mediadl.example.com") when
+    /// serving behind a reverse proxy. Use ["*"] to allow any host (with token
+    /// auth already in place that's a reasonable choice for a public endpoint).
+    #[serde(default)]
+    pub allowed_hosts: Option<Vec<String>>,
     /// Escape hatch to run without any auth (NOT recommended; the endpoint can
     /// trigger downloads). Defaults to false.
     #[serde(default)]
@@ -45,6 +51,7 @@ impl Default for HttpConfig {
         Self {
             listen: default_listen(),
             token: None,
+            allowed_hosts: None,
             allow_insecure_no_auth: false,
         }
     }
@@ -68,6 +75,16 @@ impl HttpConfig {
     /// Whether token auth is enforced.
     pub fn auth_enabled(&self) -> bool {
         matches!(&self.token, Some(t) if !t.is_empty())
+    }
+
+    /// Hosts the MCP transport should accept in the `Host` header.
+    /// `None`/`["*"]` disables the check; otherwise the given hostnames are used.
+    pub fn resolved_allowed_hosts(&self) -> Option<Vec<String>> {
+        match &self.allowed_hosts {
+            None => None, // keep rmcp's loopback-only default
+            Some(hosts) if hosts.iter().any(|h| h == "*") => Some(vec![]), // disable
+            Some(hosts) => Some(hosts.clone()),
+        }
     }
 }
 

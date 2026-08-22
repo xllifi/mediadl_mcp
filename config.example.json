@@ -4,7 +4,8 @@
   "qbittorrent_password": "adminadmin",
   "http": {
     "listen": "0.0.0.0:8000",
-    "token": "CHANGE_ME_LONG_RANDOM_SECRET"
+    "token": "CHANGE_ME_LONG_RANDOM_SECRET",
+    "allowed_hosts": ["mediadl.example.com"]
   },
   "indexers": {
     "nyaa": {

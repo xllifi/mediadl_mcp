@@ -42,13 +42,29 @@ async fn main() -> Result<()> {
     let server = MediaDlServer::new(&config, args.tokens).await?;
 
     let ct = CancellationToken::new();
+
+    // Host-header (DNS-rebinding) handling. Default keeps loopback-only; setting
+    // http.allowed_hosts lets a public reverse-proxied hostname through.
+    let mut http_config = StreamableHttpServerConfig::default()
+        .with_cancellation_token(ct.child_token())
+        .with_json_response(true);
+    match config.http.resolved_allowed_hosts() {
+        Some(hosts) if hosts.is_empty() => {
+            tracing::warn!("http.allowed_hosts allows any Host header");
+            http_config = http_config.disable_allowed_hosts();
+        }
+        Some(hosts) => {
+            tracing::info!("allowed Host headers: {}", hosts.join(", "));
+            http_config = http_config.with_allowed_hosts(hosts);
+        }
+        None => {}
+    }
+
     let mcp_service: StreamableHttpService<MediaDlServer, LocalSessionManager> =
         StreamableHttpService::new(
             move || Ok(server.clone()),
             LocalSessionManager::default().into(),
-            StreamableHttpServerConfig::default()
-                .with_cancellation_token(ct.child_token())
-                .with_json_response(true),
+            http_config,
         );
 
     // The MCP endpoint. Token auth (constant-time) is layered on when a token is
